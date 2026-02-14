@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tax Invoice ZATCA</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+body{font-family:Arial;background:#f2f2f2;padding:20px}
+input{width:100%;padding:6px;margin-bottom:5px}
+table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff}
+th,td{border:1px solid #000;padding:6px;text-align:center}
+th{background:#eee}
+button{padding:8px 15px;margin:5px;cursor:pointer}
+.invoice{background:#fff;padding:20px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;gap:30px}
+.box{width:48%}
+.qrbox{text-align:center;min-width:160px}
+.incVat{background:#cce5ff;}
+
+.total{
+ width:45%;
+ margin-top:10px;
+ margin-left:auto;
+ text-align:right;
+}
+
+@media print{
+ #form{display:none !important}
+ body{margin:0}
+}
+</style>
+</head>
+
+<body>
+
+<div id="form">
+
+<h3>Company Information</h3>
+<input id="sName" placeholder="Company Name">
+<input id="sAddress" placeholder="Address">
+<input id="sVAT" placeholder="VAT Number">
+<input id="sCR" placeholder="CR Number">
+<input id="sPhone" placeholder="Mobile Number">
+
+<h3>Customer Information</h3>
+<input id="cName" placeholder="Customer Name">
+<input id="cVAT" placeholder="Customer VAT Number">
+<input id="cPhone" placeholder="Customer Mobile">
+
+<h3>Invoice Details</h3>
+<input id="invNo" placeholder="Invoice Number">
+<input id="invDate" type="date">
+
+<h3>Items</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Description</th>
+<th>Quantity</th>
+<th>Price</th>
+</tr>
+</thead>
+<tbody id="itemsBody"></tbody>
+</table>
+
+<button onclick="addRow()">Add Item</button>
+<button onclick="generate()">Generate Invoice</button>
+<button onclick="printPDF()">PDF</button>
+</div>
+
+<hr>
+
+<div id="invoice" class="invoice">
+
+<div class="header">
+<div class="box">
+<b id="oName"></b><br>
+<span id="oAddress"></span><br>
+<span id="oCR"></span><br>
+<span id="oPhone"></span><br>
+<span id="oVAT"></span>
+</div>
+
+<div class="qrbox">
+<div id="qr"></div>
+<div id="clientInfo"></div>
+</div>
+</div>
+
+<table>
+<tr>
+<td>Invoice #: <span id="oInv"></span></td>
+<td>Date: <span id="oDate"></span></td>
+</tr>
+</table>
+
+
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Description</th>
+<th>Quantity</th>
+<th>Price</th>
+<th>VAT 15%</th>
+<th class="incVat">Amount Inc. VAT</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody id="finalItems"></tbody>
+</table>
+
+<table class="total">
+<tr><td>Subtotal</td><td id="sub"></td></tr>
+<tr><td>VAT</td><td id="vat"></td></tr>
+<tr><td><b>Grand Total</b></td><td id="grand"></td></tr>
+</table>
+
+<p id="words"></p>
+
+</div>
+
+<script>
+
+function addRow(){
+ let r=document.createElement("tr");
+ r.innerHTML=`
+ <td></td>
+ <td><input></td>
+ <td><input type="number" value="1" min="1"></td>
+ <td><input type="number" value="0" min="0"></td>`;
+ itemsBody.appendChild(r);
+}
+
+function encodeTLV(tag,value){
+ const enc=new TextEncoder().encode(value);
+ let s=String.fromCharCode(tag)+String.fromCharCode(enc.length);
+ enc.forEach(b=>s+=String.fromCharCode(b));
+ return s;
+}
+
+function generateZATCAQR(seller,vat,date,total,vatTotal){
+ let tlv="";
+ tlv+=encodeTLV(1,seller);
+ tlv+=encodeTLV(2,vat);
+ tlv+=encodeTLV(3,date);
+ tlv+=encodeTLV(4,total.toFixed(2));
+ tlv+=encodeTLV(5,vatTotal.toFixed(2));
+ return btoa(tlv);
+}
+
+function generate(){
+
+ finalItems.innerHTML="";
+ let subtotal=0,vat=0;
+
+ oName.innerText=sName.value;
+ oAddress.innerText="Address: "+sAddress.value;
+ oCR.innerText="CR: "+sCR.value;
+ oPhone.innerText="Mobile: "+sPhone.value;
+ oVAT.innerText="VAT: "+sVAT.value;
+
+ clientInfo.innerHTML=[cName.value,cVAT.value,cPhone.value].filter(v=>v).join("<br>");
+
+ oInv.innerText=invNo.value;
+ oDate.innerText=invDate.value;
+
+ [...itemsBody.rows].forEach((r,i)=>{
+  let d=r.cells[1].children[0].value;
+  let q=+r.cells[2].children[0].value;
+  let p=+r.cells[3].children[0].value;
+  if(!d) return;
+
+  let vatUnit=p*0.15;
+  let inc=p+vatUnit;
+  let totalLine=inc*q;
+
+  subtotal+=p*q;
+  vat+=vatUnit*q;
+
+  finalItems.innerHTML+=`
+  <tr>
+    <td>${i+1}</td>
+    <td>${d}</td>
+    <td>${q}</td>
+    <td>${p.toFixed(2)}</td>
+    <td>${vatUnit.toFixed(2)}</td>
+    <td class="incVat">${inc.toFixed(2)}</td>
+    <td>${totalLine.toFixed(2)}</td>
+  </tr>`;
+ });
+
+ sub.innerText=subtotal.toFixed(2);
+ document.getElementById("vat").innerText=vat.toFixed(2);
+ let g=subtotal+vat;
+ grand.innerText=g.toFixed(2);
+
+ words.innerText = numberToWords(g);
+
+ qr.innerHTML="";
+ new QRCode(qr,{
+  text:generateZATCAQR(sName.value,sVAT.value,invDate.value+"T00:00:00Z",g,vat),
+  width:120,
+  height:120
+ });
+}
+
+function printPDF(){
+ if(finalItems.children.length===0){
+   alert("Generate invoice first");
+   return;
+ }
+
+ document.getElementById("form").style.display="none";
+
+ html2pdf().from(invoice).set({
+   margin:[25,5,5,5],   /* ← هامش علوي كبير = 4 أسطر تقريبًا */
+   filename:"Tax_Invoice.pdf",
+   html2canvas:{scale:2},
+   jsPDF:{unit:"mm",format:"a4"}
+ }).save().then(()=>{
+   document.getElementById("form").style.display="block";
+ });
+}
+
+function numberToWords(amount){
+
+ const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine"];
+ const teens=["Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+ const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+
+ function words(n){
+  if(n===0) return "";
+  if(n<10) return ones[n];
+  if(n<20) return teens[n-10];
+  if(n<100) return tens[Math.floor(n/10)]+" "+ones[n%10];
+  if(n<1000) return ones[Math.floor(n/100)]+" Hundred "+words(n%100);
+  if(n<1000000) return words(Math.floor(n/1000))+" Thousand "+words(n%1000);
+  if(n<1000000000) return words(Math.floor(n/1000000))+" Million "+words(n%1000000);
+  return n;
+ }
+
+ let parts=amount.toFixed(2).split(".");
+ let r=parseInt(parts[0]);
+ let h=parseInt(parts[1]);
+
+ return ( "Total:" + words(r)+" Saudi Riyals"+
+  (h? " and "+words(h)+" Halalas":"")+
+  " only.").replace(/\s+/g," ").trim();
+}
+
+</script>
+
+</body>
+</html>
